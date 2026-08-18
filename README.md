@@ -26,14 +26,16 @@
 Supported Browsers:
 Chrome, Brave, Firefox, LibreWolf, Waterfox, Tor Browser, Zen, Ungoogled Chromium, Helium, I2P
 
-**[Simpler_Multi-tool_v1](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_v1)**
-<img width="1280" height="400" alt="image" src="https://github.com/user-attachments/assets/a024a91c-edb7-4548-80c2-fcaf82d0aeed" />
+**[Simpler_Multi-tool_v1.2](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_v1.2)**
+<img width="1112" height="617" alt="image" src="https://github.com/user-attachments/assets/610efbef-47f1-4dc5-9875-8a2b5715b2f7" />
 1: Username Checker (Social Media)
 2: IP Checker
 3: Email Checker
 4: Image Metadata Deleter
 5: Temp Mail Generator (via Guerrilla Mail)
 6: File Hasher
+7: Password Generator
+8: Port Scanner
 
 **Dependencies:**
 requests, Pillow, colorama
