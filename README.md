@@ -37,5 +37,6 @@ Features:
 4: Image Metadata Deleter
 5: Temp Mail Generator (via Guerrilla Mail)
 6: File Hasher
+
 **Dependencies:**
 requests, Pillow, colorama
