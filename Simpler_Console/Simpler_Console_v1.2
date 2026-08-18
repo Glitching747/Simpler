@@ -1,0 +1,960 @@
+import sys
+import os
+import re
+import time
+import webbrowser
+import subprocess
+import shutil
+import urllib.request
+import urllib.error
+import ctypes; ctypes.windll.kernel32.SetConsoleTitleW("Simpler Console")
+
+# Attempt to load the auto-complete engine for Windows terminal inputs
+try:
+    import readline
+except ImportError:
+    try:
+        from pyreadline3 import Readline
+        readline = Readline()
+    except ImportError:
+        readline = None
+
+# Global list of apps and operations to feed the autocomplete engine
+COMMAND_WORDS = ["run", "issue", "help", "exit", "kill", "status", "clear", "specs", "ping", "spotnowplaying"]
+SUPPORT_LIST_COMMANDS = [
+    "supported browsers", "supported apps", "supported websites", "supported steam games",
+]
+SUPPORTED_BROWSERS = ["chrome", "brave", "firefox", "librewolf", "waterfox", "tor"]
+SUPPORTED_UTILITIES = [
+    "vlc", "notepad++", "spotify", "playnite", "discord", "steam",
+    "system informer", "resource hacker", "windhawk", "everything", "powertoys", "rufus",
+]
+SUPPORTED_WEBSITES = [
+    "youtube", "x", "instagram", "twitch", "reddit", "chatgpt", "wikipedia", "amazon", "tiktok",
+]
+SUPPORTED_STEAM_GAMES = [
+    "cs2", "dota 2", "pubg", "palworld", "rust", "bongo cat", "apex legends", "tbh",
+    "dead by daylight", "project zomboid",
+]
+SUPPORTED_APPS = ["firefox", "chrome", "brave", "brave tor", "librewolf", "waterfox", "tor", "vlc", "notepad++", "spotify", "playnite", "discord", "steam", "everything", "powertoys", "rufus", "system informer", "resource hacker", "windhawk"]
+ISSUE_PARAMS = ["run"]
+AUTOCOMPLETE_LIST = COMMAND_WORDS + SUPPORTED_APPS + ISSUE_PARAMS + SUPPORT_LIST_COMMANDS
+
+# Sites that "run [browser] [site]" and "ping [site]" both understand.
+SITE_URLS = {
+    "youtube": "youtube.com",
+    "x": "x.com",
+    "instagram": "instagram.com",
+    "twitch": "twitch.tv",
+    "reddit": "reddit.com",
+    "chatgpt": "chatgpt.com",
+    "wikipedia": "wikipedia.org",
+    "amazon": "amazon.com",
+    "tiktok": "tiktok.com"
+}
+
+# StatusGator uses its own slug per service, which doesn't always match
+# our site key (e.g. chatgpt is tracked there as "openai", wikipedia as "wikimedia").
+STATUSGATOR_SLUGS = {
+    "youtube": "youtube",
+    "x": "x",
+    "instagram": "instagram",
+    "twitch": "twitch",
+    "reddit": "reddit",
+    "chatgpt": "openai",
+    "wikipedia": "wikimedia",
+    "amazon": "amazon",
+    "tiktok": "tiktok"
+}
+
+# Maps app names to their actual process/image names, used by kill + status.
+# "tor" shares firefox's process name since it's a Firefox-based browser.
+PROCESS_NAMES = {
+    "firefox": "firefox.exe",
+    "chrome": "chrome.exe",
+    "brave": "brave.exe",
+    "librewolf": "librewolf.exe",
+    "waterfox": "waterfox.exe",
+    "tor": "firefox.exe",
+    "vlc": "vlc.exe",
+    "notepad++": "notepad++.exe",
+    "spotify": "Spotify.exe",
+    "playnite": "Playnite.DesktopApp.exe",
+    "discord": "Discord.exe",
+    "steam": "steam.exe",
+    "everything": "Everything.exe",
+    "powertoys": "PowerToys.exe",
+    "rufus": "rufus.exe",
+    "system informer": "SystemInformer.exe",
+    "resource hacker": "ResourceHacker.exe",
+    "windhawk": "windhawk.exe",
+}
+
+# Command-line flags for private/incognito windows, keyed by browser app name.
+# A value of None means that browser has no distinct incognito mode to offer.
+INCOGNITO_FLAGS = {
+    "firefox": "-private-window",
+    "chrome": "--incognito",
+    "brave": "--incognito",
+    "librewolf": "-private-window",
+    "waterfox": "-private-window",
+    "tor": None,
+}
+
+TOR_SAFETY_MESSAGE = (
+    "(Please don't try to run site commands paired with tor, "
+    "to start searching with tor, find the .onion links to "
+    "either BBC, or The New York Times.)"
+)
+
+# Steam game keys map to (app_id, display_name) for "run steam [game]".
+STEAM_GAMES = {
+    "cs2": (730, "Counter-Strike 2"),
+    "dota 2": (570, "Dota 2"),
+    "pubg": (578080, "PUBG: BATTLEGROUNDS"),
+    "palworld": (1623730, "Palworld"),
+    "rust": (252490, "Rust"),
+    "bongo cat": (3419430, "Bongo Cat"),
+    "apex legends": (1172470, "Apex Legends"),
+    "tbh": (3678970, "TBH: Task Bar Hero"),
+    "dead by daylight": (381210, "Dead by Daylight"),
+    "project zomboid": (108600, "Project Zomboid"),
+}
+
+def _detect_steam_game_misuse(tokens):
+    """Returns (app_target, game_key) when a steam game is used without 'run steam'."""
+    if len(tokens) < 2 or tokens[1].lower() == "steam":
+        return None, None
+
+    app = tokens[1].lower()
+
+    if len(tokens) >= 3:
+        remainder = " ".join(tokens[2:]).lower()
+        if remainder in STEAM_GAMES:
+            return app, remainder
+
+    full_target = " ".join(tokens[1:]).lower()
+    if full_target in STEAM_GAMES:
+        return app, full_target
+
+    return None, None
+
+def _print_steam_game_misuse_warning(app_target):
+    print("(Simpler Console has noticed you inputted a steam game while trying to "
+          f"launch it through {app_target}, please use the correct command next time!)")
+
+SUPPORTED_LIST_OUTPUT = {
+    "supported browsers": ("Supported Browsers", SUPPORTED_BROWSERS),
+    "supported apps": ("Supported Apps", SUPPORTED_UTILITIES),
+    "supported websites": ("Supported Websites", SUPPORTED_WEBSITES),
+    "supported steam games": ("Supported Steam Games", SUPPORTED_STEAM_GAMES),
+}
+
+def _print_supported_list(command_line):
+    """Prints a comma-separated supported-items list for a support command."""
+    label, items = SUPPORTED_LIST_OUTPUT[command_line]
+    print(f"\n{label}: {', '.join(items)}\n")
+
+def autocomplete_handler(text, state):
+    """The engine logic that automatically maps user input to matching command keys"""
+    options = [word for word in AUTOCOMPLETE_LIST if word.startswith(text.lower())]
+    if state < len(options):
+        return options[state]
+    return None
+
+def _is_process_running(image_name):
+    """Checks Windows' task list for a running process matching image_name."""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {image_name}"],
+            capture_output=True, text=True
+        )
+        return image_name.lower() in result.stdout.lower()
+    except Exception:
+        return False
+
+def _run_powershell(script, timeout=15):
+    """Runs a PowerShell script and returns its stdout, or None on failure."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, timeout=timeout
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+def _get_system_specs():
+    """Gathers CPU temp (best-effort), RAM usage, and C: drive storage via
+    a single PowerShell round-trip. Returns a dict, or None on failure."""
+    ps_script = (
+        "$os = Get-CimInstance Win32_OperatingSystem; "
+        "$disk = Get-CimInstance Win32_LogicalDisk -Filter \"DeviceID='C:'\"; "
+        "try { "
+        "  $t = Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace 'root/wmi' "
+        "-ErrorAction Stop | Select-Object -First 1 -ExpandProperty CurrentTemperature "
+        "} catch { $t = 'NA' }; "
+        "Write-Output \"$($os.TotalVisibleMemorySize)|$($os.FreePhysicalMemory)\"; "
+        "Write-Output \"$($disk.Size)|$($disk.FreeSpace)\"; "
+        "Write-Output $t"
+    )
+
+    output = _run_powershell(ps_script)
+    if not output:
+        return None
+
+    lines = output.splitlines()
+    if len(lines) < 3:
+        return None
+
+    try:
+        total_kb, free_kb = (int(x) for x in lines[0].split("|"))
+        disk_total_bytes, disk_free_bytes = (int(x) for x in lines[1].split("|"))
+    except (ValueError, IndexError):
+        return None
+
+    ram_total_gb = total_kb / 1024 / 1024
+    ram_used_gb = (total_kb - free_kb) / 1024 / 1024
+    ram_percent = (ram_used_gb / ram_total_gb * 100) if ram_total_gb else 0
+
+    disk_total_gb = disk_total_bytes / (1024 ** 3)
+    disk_free_gb = disk_free_bytes / (1024 ** 3)
+    disk_used_gb = disk_total_gb - disk_free_gb
+    disk_percent = (disk_used_gb / disk_total_gb * 100) if disk_total_gb else 0
+
+    cpu_temp_c = None
+    temp_raw = lines[2].strip()
+    if temp_raw and temp_raw != "NA":
+        try:
+            # MSAcpi_ThermalZoneTemperature reports tenths of a Kelvin
+            cpu_temp_c = (int(temp_raw) / 10) - 273.15
+        except ValueError:
+            cpu_temp_c = None
+
+    return {
+        "ram_used_gb": ram_used_gb,
+        "ram_total_gb": ram_total_gb,
+        "ram_percent": ram_percent,
+        "disk_used_gb": disk_used_gb,
+        "disk_total_gb": disk_total_gb,
+        "disk_free_gb": disk_free_gb,
+        "disk_percent": disk_percent,
+        "cpu_temp_c": cpu_temp_c,
+    }
+
+def _spec_bar(percent, width=20):
+    """Renders a filled/empty block bar for a 0-100 percent value."""
+    filled = int(round((percent / 100) * width))
+    filled = max(0, min(width, filled))
+    return "█" * filled + "░" * (width - filled)
+
+def _print_specs(specs):
+    """Prints the compact ASCII specs block from a dict built by _get_system_specs."""
+    if specs["cpu_temp_c"] is not None:
+        temp_text = f"{specs['cpu_temp_c']:.1f}\u00b0C"
+    else:
+        temp_text = "N/A (sensor not exposed by this system)"
+
+    ram_bar = _spec_bar(specs["ram_percent"])
+    ram_text = (f"[{ram_bar}] {specs['ram_percent']:.0f}%  "
+                f"({specs['ram_used_gb']:.1f}/{specs['ram_total_gb']:.1f} GB)")
+
+    disk_bar = _spec_bar(specs["disk_percent"])
+    disk_text = (f"[{disk_bar}] {specs['disk_percent']:.0f}%  "
+                 f"({specs['disk_free_gb']:.1f} GB free of {specs['disk_total_gb']:.1f} GB)")
+
+    rows = [
+        f"{'CPU Temp':<9}: {temp_text}",
+        f"{'RAM':<9}: {ram_text}",
+        f"{'Storage':<9}: {disk_text}",
+    ]
+
+    title = "SYSTEM SPECS"
+    # Size the box to whichever is wider: the longest row, or the title
+    # plus its minimum padding - so large drive/RAM numbers never overflow.
+    width = max(max(len(r) for r in rows) + 2, len(title) + 4)
+
+    pad = width - len(title) - 2
+    left = pad // 2
+    right = pad - left
+
+    print()
+    print("┌" + "─" * left + " " + title + " " + "─" * right + "┐")
+    for row in rows:
+        print("│ " + row.ljust(width - 2) + " │")
+    print("└" + "─" * width + "┘")
+    print()
+
+def _has_spicetify():
+    """Best-effort check for an installed/configured Spicetify setup."""
+    if shutil.which("spicetify") or shutil.which("spicetify-cli"):
+        return True
+
+    spicetify_config = os.path.expandvars(r"%APPDATA%\spicetify\config-xpui.ini")
+    return os.path.isfile(spicetify_config)
+
+def _print_spotify_notice():
+    """Prints a Spicetify-aware message when the user launches Spotify."""
+    if _has_spicetify():
+        print("(Have fun using Spotify with Spicetify!)")
+    else:
+        print("(Simpler Console has noticed that you ran Spotify and you don't seem "
+              "to have Spicetify, Simpler Console recommends you install Spicetify at "
+              "https://spicetify.app/#install for a better Spotify experience!)")
+
+def _check_statusgator(slug):
+    """Best-effort scrape of a StatusGator status page. StatusGator has no
+    stable public scrape API for these pages, and its markup can change at any
+    time, so this returns one of "UP", "DOWN", "WARN", or None (couldn't tell)
+    - never treat it as a guarantee, and the caller always shows the direct link."""
+    url = f"https://statusgator.com/services/{slug}/"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/124.0 Safari/537.36"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None, url, f"StatusGator has no page for '{slug}'."
+        return None, url, f"StatusGator returned an error (HTTP {e.code})."
+    except Exception as e:
+        return None, url, f"Could not reach StatusGator ({e})."
+
+    lowered = html.lower()
+
+    # Primary status lives in an h3 heading like "YouTube is up".
+    heading = re.search(
+        r'<h3[^>]*>\s*[^<]*?\bis\s+(up|down|warn(?:ing)?|under\s+maintenance)\b',
+        html,
+        re.I,
+    )
+    if heading:
+        status = heading.group(1).lower()
+        if status == "up":
+            return "UP", url, None
+        if status == "down":
+            return "DOWN", url, None
+        if status.startswith("warn"):
+            return "WARN", url, None
+        if "maintenance" in status:
+            return "MAINTENANCE", url, None
+
+    if "currently operational" in lowered or "service was operational" in lowered:
+        return "UP", url, None
+
+    return None, url, "Couldn't confirm status from the page automatically."
+
+_SPOTIFY_NOW_PLAYING_PS = r"""
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+    $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+})[0]
+function Await($WinRtTask, $ResultType) {
+    $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+    $netTask = $asTask.Invoke($null, @($WinRtTask))
+    $netTask.Wait(-1) | Out-Null
+    $netTask.Result
+}
+[Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime] | Out-Null
+$manager = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+$session = $null
+foreach ($s in $manager.GetSessions()) {
+    if ($s.SourceAppUserModelId -like '*Spotify*') { $session = $s; break }
+}
+if (-not $session) { Write-Output 'NO_SESSION'; exit 0 }
+$playbackInfo = $session.GetPlaybackInfo()
+$status = $playbackInfo.PlaybackStatus.ToString()
+if ($status -eq 'Closed' -or $status -eq 'Stopped') {
+    Write-Output 'STOPPED||'
+    exit 0
+}
+$props = Await ($session.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+$title = if ($props.Title) { $props.Title } else { '' }
+$artist = if ($props.Artist) { $props.Artist } else { '' }
+$title = ($title -replace '[\r\n|]+', ' ').Trim()
+$artist = ($artist -replace '[\r\n|]+', ' ').Trim()
+Write-Output ($status + '|' + $title + '|' + $artist)
+"""
+
+def _get_spotify_now_playing():
+    """Reads Spotify title/artist from Windows media controls.
+
+    Returns one of:
+      - ("playing"|"paused", title, artist)
+      - ("stopped", "", "")
+      - ("no_session", "", "") when Spotify has no active session
+      - None on failure."""
+    output = _run_powershell(_SPOTIFY_NOW_PLAYING_PS, timeout=8)
+    if not output:
+        return None
+
+    line = output.splitlines()[-1].strip()
+    if line == "NO_SESSION":
+        return ("no_session", "", "")
+    if line == "STOPPED||":
+        return ("stopped", "", "")
+
+    parts = line.split("|", 2)
+    if len(parts) != 3:
+        return None
+
+    status, title, artist = parts
+    status_key = status.lower()
+    if status_key == "playing":
+        return ("playing", title, artist)
+    if status_key == "paused":
+        return ("paused", title, artist)
+    return ("stopped", title, artist)
+
+def _format_spotify_track(state, title, artist):
+    """Builds a single-line status message for the current Spotify track."""
+    if state == "no_session":
+        return "No Spotify playback session found."
+    if state == "stopped":
+        return "Spotify is not playing anything right now."
+    if not title and not artist:
+        return "Spotify is active, but no track info is available."
+
+    label = "Now Playing" if state == "playing" else "Paused"
+    if title and artist:
+        return f"{label}: {title} — {artist}"
+    if title:
+        return f"{label}: {title}"
+    return f"{label}: {artist}"
+
+def _watch_spotify_now_playing():
+    """Polls Spotify and prints track changes until Ctrl+C."""
+    if not _is_process_running("Spotify.exe"):
+        print("Spotify is not running. Start Spotify and try again.")
+        return
+
+    print("Watching Spotify now playing. Press Ctrl+C to stop.\n")
+    last_message = None
+    error_notified = False
+
+    try:
+        while True:
+            track = _get_spotify_now_playing()
+            if track is None:
+                if not error_notified:
+                    print("Could not read Spotify playback info from Windows media controls.")
+                    error_notified = True
+            else:
+                error_notified = False
+                state, title, artist = track
+                message = _format_spotify_track(state, title, artist)
+                if message != last_message:
+                    print(message)
+                    last_message = message
+
+            time.sleep(1.5)
+    except KeyboardInterrupt:
+        print("\nStopped watching Spotify.")
+
+def parse_and_execute(input_line):
+    tokens = input_line.strip().split()
+    if not tokens:
+        return
+
+    command_line = " ".join(tokens).lower()
+    if command_line in SUPPORTED_LIST_OUTPUT:
+        _print_supported_list(command_line)
+        return
+
+    # Extract the first word string out of the list before lowering it
+    command = tokens[0].lower()
+
+    # --- 1. RUN COMMAND ---
+    if command == "run":
+        if len(tokens) < 2:
+            print("Syntax Error: Use 'run [app]' (e.g., run brave)")
+            return
+        
+        raw_target = " ".join(tokens[1:]).lower()
+
+        # Redirect if user tries old microsoft notepad
+        if raw_target == "notepad":
+            print('Please try "run notepad++", a better version of the Microsoft Notepad.')
+            return
+
+        # Detect a trailing "incognito" modifier and strip it off before
+        # parsing the app name / site as usual, e.g. "run brave chatgpt incognito"
+        incognito_requested = False
+        if len(tokens) >= 3 and tokens[-1].lower() == "incognito":
+            incognito_requested = True
+            tokens = tokens[:-1]
+            raw_target = " ".join(tokens[1:]).lower()
+
+        misused_app, _misused_game = _detect_steam_game_misuse(tokens)
+        if misused_app:
+            _print_steam_game_misuse_warning(misused_app)
+            return
+
+        steam_game_id = None
+        steam_game_name = None
+
+        if len(tokens) >= 3 and tokens[1].lower() == "steam":
+            steam_game_key = " ".join(tokens[2:]).lower()
+            if steam_game_key in STEAM_GAMES:
+                steam_game_id, steam_game_name = STEAM_GAMES[steam_game_key]
+                target = "steam"
+            else:
+                print(f"Language Error: '{steam_game_key}' is not in the Steam game database. "
+                      f"Options are: {', '.join(STEAM_GAMES)}")
+                return
+
+        # Some app names are more than one word - match those before
+        # falling back to single-token app + optional site-argument parsing
+        MULTI_WORD_APPS = {"system informer", "resource hacker"}
+
+        site_urls = SITE_URLS
+
+        # Only actual browsers know what to do with a site argument
+        BROWSER_APPS = {"firefox", "chrome", "brave", "librewolf", "waterfox", "tor"}
+
+        url_arg = ""
+        brave_tor_requested = False
+
+        if len(tokens) >= 3 and tokens[1].lower() == "brave" and tokens[2].lower() == "tor":
+            brave_tor_requested = True
+            target = "brave"
+            remainder = [t.lower() for t in tokens[3:]]
+
+            if incognito_requested:
+                print("(Brave Tor doesn't currently support incognito.)")
+                return
+
+            if remainder:
+                if len(remainder) > 1:
+                    print("Syntax Error: Use 'run brave tor' with no extra arguments.")
+                    return
+
+                site_key = remainder[0]
+                if site_key in site_urls:
+                    print(TOR_SAFETY_MESSAGE)
+                    return
+
+                print(f"Language Error: '{site_key}' is not supported yet. "
+                      f"Options are: {', '.join(site_urls)}")
+                return
+
+        elif raw_target in MULTI_WORD_APPS:
+            target = raw_target
+
+        elif steam_game_id is not None:
+            pass
+
+        else:
+            # Extract target string correctly
+            target = tokens[1].lower()
+
+            # Shorthand: "run reddit" / "run x" with no app given -> default to Brave
+            if target in site_urls:
+                print("(Browser not specified, defaulting to Brave.)")
+                url_arg = site_urls[target]
+                target = "brave"
+
+            elif len(tokens) >= 3 and target in BROWSER_APPS:
+                site_key = tokens[2].lower()
+
+                if site_key in STEAM_GAMES:
+                    _print_steam_game_misuse_warning(target)
+                    return
+
+                # Tor Safety Check
+                if target == "tor" and site_key in site_urls:
+                    print(TOR_SAFETY_MESSAGE)
+                    return
+
+                if site_key in site_urls:
+                    url_arg = site_urls[site_key]
+
+        app_database = {
+            "firefox": {
+                "exec": "firefox.exe", 
+                "id": "Mozilla.Firefox",
+                "paths": [r"C:\Program Files\Mozilla Firefox\firefox.exe", r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"]
+            },
+            "chrome": {
+                "exec": "chrome.exe", 
+                "id": "Google.Chrome",
+                "paths": [r"C:\Program Files\Google\Chrome\Application\chrome.exe", r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"]
+            },
+            "brave": {
+                "exec": "brave.exe", 
+                "id": "Brave.Brave",
+                "paths": [r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"]
+            },
+            "librewolf": {
+                "exec": "librewolf.exe",
+                "id": "LibreWolf.LibreWolf",
+                "paths": [r"C:\Program Files\LibreWolf\librewolf.exe", r"C:\Program Files (x86)\LibreWolf\librewolf.exe"]
+            },
+            "waterfox": {
+                "exec": "waterfox.exe",
+                "id": "Waterfox.Waterfox",
+                "paths": [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Waterfox\waterfox.exe"),
+                    r"C:\Program Files\Waterfox\waterfox.exe",
+                    r"C:\Program Files (x86)\Waterfox\waterfox.exe",
+                ]
+            },
+            "tor": {
+                "exec": "firefox.exe", 
+                "id": "TorProject.TorBrowser",
+                "paths": [os.path.expanduser(r"~\Desktop\Tor Browser\Browser\firefox.exe"), os.path.expanduser(r"~\OneDrive\Desktop\Tor Browser\Browser\firefox.exe")]
+            },
+            "vlc": {
+                "exec": "vlc.exe", 
+                "id": "VideoLAN.VLC",
+                "paths": [r"C:\Program Files\VideoLAN\VLC\vlc.exe"]
+            },
+            "notepad++": {
+                "exec": "notepad++.exe", 
+                "id": "Notepad++.Notepad++",
+                "paths": [r"C:\Program Files\Notepad++\notepad++.exe", r"C:\Program Files (x86)\Notepad++\notepad++.exe"]
+            },
+            "spotify": {
+                "exec": "Spotify.exe", 
+                "id": "Spotify.Spotify",
+                "paths": [os.path.expandvars(r"%APPDATA%\Spotify\Spotify.exe"), r"C:\Program Files\Spotify\Spotify.exe"]
+            },
+            "playnite": {
+                "exec": "Playnite.DesktopApp.exe", 
+                "id": "Playnite.Playnite",
+                "paths": [os.path.expandvars(r"%LocalAppData%\Playnite\Playnite.DesktopApp.exe")]
+            },
+            "discord": {
+                "exec": "Discord.exe",
+                "id": "Discord.Discord",
+                "paths": [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Discord\Update.exe"),
+                    os.path.expandvars(r"%LOCALAPPDATA%\Discord\app-1.0.9004\Discord.exe")
+                ]
+            },
+            "steam": {
+                "exec": "steam.exe",
+                "id": "Valve.Steam",
+                "paths": [r"C:\Program Files (x86)\Steam\steam.exe", r"C:\Program Files\Steam\steam.exe"]
+            },
+            "everything": {
+                "exec": "Everything.exe",
+                "id": "voidtools.Everything",
+                "paths": [
+                    r"C:\Program Files\Everything\Everything.exe",
+                    r"C:\Program Files (x86)\Everything\Everything.exe",
+                ]
+            },
+            "powertoys": {
+                "exec": "PowerToys.exe",
+                "id": "Microsoft.PowerToys",
+                "paths": [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\PowerToys\PowerToys.exe"),
+                    os.path.expandvars(r"%LOCALAPPDATA%\Programs\PowerToys\PowerToys.exe"),
+                    r"C:\Program Files\PowerToys\PowerToys.exe",
+                ]
+            },
+            "rufus": {
+                "exec": "rufus.exe",
+                "id": "Rufus.Rufus",
+                "paths": [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links\rufus.exe"),
+                    os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Rufus.Rufus_Microsoft.Winget.Source_8wekyb3d8bbwe\rufus.exe"),
+                ]
+            },
+            "system informer": {
+                "exec": "SystemInformer.exe",
+                "id": "WinsiderSS.SystemInformer",
+                "paths": [
+                    r"C:\Program Files\SystemInformer\SystemInformer.exe",
+                    os.path.expandvars(r"%LOCALAPPDATA%\Programs\SystemInformer\SystemInformer.exe")
+                ]
+            },
+            "resource hacker": {
+                "exec": "ResourceHacker.exe",
+                "id": "AngusJohnson.ResourceHacker",
+                "paths": [r"C:\Program Files\Resource Hacker\ResourceHacker.exe", r"C:\Program Files (x86)\Resource Hacker\ResourceHacker.exe"]
+            },
+            "windhawk": {
+                "exec": "windhawk.exe",
+                "id": "RamenSoftware.Windhawk",
+                "paths": [r"C:\Program Files\Windhawk\windhawk.exe", os.path.expandvars(r"%LOCALAPPDATA%\Programs\Windhawk\windhawk.exe")]
+            }
+        }
+        
+        # FIXED: Corrected indentation alignment error out of dict body
+        if target == "edge":
+            print('(Simpler Console has noticed that you tried to run a chrome-installer, '
+                  'you can simply just input "run chrome" or even better you could input "run brave".)')
+            return
+
+        if target not in app_database:
+            print(f"Language Error: '{target}' is not supported yet.")
+            return
+
+        if steam_game_id is not None:
+            print(f"Launching steam ({steam_game_name})...")
+            try:
+                webbrowser.open(f"steam://rungameid/{steam_game_id}")
+            except Exception as e:
+                print(f"Error launching Steam game: {e}")
+            return
+
+        incognito_flag = None
+        if incognito_requested:
+            if brave_tor_requested:
+                print("(Brave Tor doesn't currently support incognito.)")
+                return
+            if INCOGNITO_FLAGS.get(target):
+                incognito_flag = INCOGNITO_FLAGS[target]
+            else:
+                print(f"({target.title()} doesn't currently support incognito.)")
+                return
+
+        app_info = app_database[target]
+        launch_path = None
+
+        # 1. Look for global path mapping
+        system_lookup = shutil.which(app_info["exec"])
+        if system_lookup:
+            launch_path = system_lookup
+        else:
+            # 2. Look through hardcoded directory mappings
+            for path in app_info["paths"]:
+                if path and os.path.exists(path):
+                    launch_path = path
+                    break
+
+        # 3. If missing everywhere, trigger Winget download
+        if not launch_path:
+            print(f"'{target}' not found. Downloading securely via Winget...")
+            install_proc = subprocess.run(["winget", "install", "--id", app_info["id"], "--silent", "--accept-source-agreements", "--accept-package-agreements"])
+            
+            # Re-scan paths immediately after installation completes
+            for path in app_info["paths"]:
+                if path and os.path.exists(path):
+                    launch_path = path
+                    break
+            
+            if not launch_path:
+                launch_path = app_info["exec"]
+
+        # Custom Mod: Messages
+        if target == "spotify":
+            _print_spotify_notice()
+
+        # Discord launches via its Update.exe with a --processStart flag
+        if target == "discord" and launch_path and launch_path.lower().endswith("update.exe"):
+            final_command = f'Start-Process "{launch_path}" -ArgumentList "--processStart Discord.exe"'
+            print(f"Launching {target}...")
+            try:
+                subprocess.Popen(["powershell", "-Command", final_command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception as e:
+                print(f"Error executing application launcher: {e}")
+            return
+
+        # Explicitly format strings so PowerShell handles spaces in paths without tripping
+        launch_args = []
+        if brave_tor_requested:
+            launch_args.append("--tor")
+        elif incognito_flag:
+            launch_args.append(incognito_flag)
+        if url_arg:
+            launch_args.append(url_arg)
+
+        final_command = f'Start-Process "{launch_path}"'
+        if launch_args:
+            quoted_args = ",".join(f'"{a}"' for a in launch_args)
+            final_command = f'Start-Process "{launch_path}" -ArgumentList {quoted_args}'
+
+        display_name = "brave tor" if brave_tor_requested else target
+        print(f"Launching {display_name}...")
+        try:
+            subprocess.Popen(["powershell", "-Command", final_command], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"Error executing application launcher: {e}")
+
+    # --- 2. KILL COMMAND ---
+    elif command == "kill":
+        if len(tokens) < 2:
+            print("Syntax Error: Use 'kill [app]' (e.g., kill spotify)")
+            return
+
+        target = " ".join(tokens[1:]).lower()
+        if target not in PROCESS_NAMES:
+            print(f"Language Error: '{target}' is not supported yet.")
+            return
+
+        image_name = PROCESS_NAMES[target]
+        print(f"Terminating {target}...")
+        try:
+            result = subprocess.run(
+                ["taskkill", "/IM", image_name, "/F"],
+                capture_output=True, text=True
+            )
+            # taskkill can report success (returncode 0) even when one of
+            # several matching processes survives (commonly because it's
+            # running elevated and this console isn't) - so re-check reality
+            # with tasklist rather than trusting the returncode alone.
+            still_running = _is_process_running(image_name)
+
+            if result.returncode == 0 and not still_running:
+                print(f"{target} terminated.")
+            elif still_running:
+                print(f"{target} is still running - it may be running with "
+                      f"administrator privileges. Try re-running Simpler "
+                      f"Console as Administrator and killing it again.")
+            else:
+                print(f"{target} does not appear to be running.")
+        except Exception as e:
+            print(f"Error terminating application: {e}")
+
+    # --- 3. STATUS COMMAND ---
+    elif command == "status":
+        # No argument: report on every supported app
+        if len(tokens) < 2:
+            print("\n=== Application Status ===")
+            checked = set()
+            for app, image_name in PROCESS_NAMES.items():
+                if image_name in checked:
+                    continue
+                checked.add(image_name)
+                running = _is_process_running(image_name)
+                state = "RUNNING" if running else "not running"
+                print(f"  {app:<12} -> {state}")
+            print()
+            return
+
+        target = " ".join(tokens[1:]).lower()
+        if target not in PROCESS_NAMES:
+            print(f"Language Error: '{target}' is not supported yet.")
+            return
+
+        image_name = PROCESS_NAMES[target]
+        running = _is_process_running(image_name)
+        state = "is currently RUNNING" if running else "is not running"
+        print(f"{target} {state}.")
+
+    # --- 4. SPECS COMMAND ---
+    elif command == "specs":
+        specs = _get_system_specs()
+        if specs is None:
+            print("Could not retrieve system specs (PowerShell may be "
+                  "unavailable, or this isn't running on Windows).")
+            return
+        _print_specs(specs)
+
+    # --- 5. PING COMMAND ---
+    elif command == "ping":
+        if len(tokens) < 2:
+            print("Syntax Error: Use 'ping [site]' (e.g., ping reddit)")
+            return
+
+        site_key = tokens[1].lower()
+        if site_key not in SITE_URLS:
+            print(f"Language Error: '{site_key}' is not supported yet. "
+                  f"Options are: {', '.join(SITE_URLS)}")
+            return
+
+        slug = STATUSGATOR_SLUGS[site_key]
+        print(f"Checking StatusGator for {site_key}...")
+        state, url, error = _check_statusgator(slug)
+
+        if state == "UP":
+            print(f"{site_key} looks UP - no problems currently reported.")
+        elif state == "DOWN":
+            print(f"{site_key} may be DOWN - other users are reporting problems.")
+        elif state == "WARN":
+            print(f"{site_key} may have ISSUES - degraded performance or partial outage reported.")
+        elif state == "MAINTENANCE":
+            print(f"{site_key} is under MAINTENANCE - scheduled work may affect availability.")
+        else:
+            print(f"Couldn't automatically confirm {site_key}'s status. {error or ''}".strip())
+
+        print(f"Source: {url}")
+
+    # --- 6. SPOTIFY NOW PLAYING ---
+    elif command == "spotnowplaying":
+        _watch_spotify_now_playing()
+
+    # --- 7. ISSUE DIAGNOSTIC SYSTEM ---
+    elif command == "issue":
+        if len(tokens) < 2:
+            print("Syntax Error: Use 'issue [run]'")
+            return
+        
+        # FIXED: Finished truncated token parse line safely
+        sub_command = tokens[1].lower()
+        
+        if sub_command == "run":
+            print("(Please make sure you have everything in your Program Files!)")
+        else:
+            print(f"Unknown parameter: 'issue {sub_command}'. Options are: run")
+
+    # --- 8. CLEAR COMMAND ---
+    elif command == "clear":
+        print_banner()
+
+    # --- 9. HELP MENU ---
+    elif command == "help":
+        print("\n=== Simpler Console App Controller ===")
+        print("Available Commands:")
+        print("  run [app] [optional_site] -> Launches supported browsers, apps, or links.")
+        print("  kill [app]                -> Force-closes a running app.")
+        print("  status [app]              -> Shows whether one or all apps are running.")
+        print("  specs                     -> Shows CPU temp, RAM, and storage usage.")
+        print("  ping [site]               -> Checks StatusGator for a site's status.")
+        print("  run steam [game]          -> Launches a game from the Steam game database.")
+        print("  run brave tor             -> Launches Brave in a private Tor window.")
+        print("  spotnowplaying            -> Shows Spotify track info and updates on change.")
+        print("  supported [?]             -> Lists supported browsers, apps, websites, or Steam games.")
+        print("  issue [topic]             -> Prints a helpful reminder.")
+        print("  clear                     -> Clears the console, keeping the banner.")
+        print("  help                      -> Displays this menu.")
+        print("  exit                      -> Closes the console app.\n")
+
+    # --- 10. EXIT APPLICATION ---
+    elif command == "exit":
+        print("Exiting Simpler Console. Goodbye!")
+        sys.exit(0)
+
+    else:
+        print(f"Unknown Command: '{command}'. Type 'help' for options.")
+
+def print_banner():
+    """Clears the screen and prints the logo, tagline, and help hint."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+    print(r"  ____ ___ __  __ ____  _     _____ ____     ____ ___  _   _ ____   ___  _     _____ ")
+    print(r" / ___|_ _|  \/  |  _ \| |   | ____|  _ \   / ___/ _ \| \ | / ___| / _ \| |   | ____|")
+    print(r" \___ \| || |\/| | |_) | |   |  _| | |_) | | |  | | | |  \| \___ \| | | | |   |  _|  ")
+    print(r"  ___) | || |  | |  __/| |___| |___|  _ <  | |__| |_| | |\  |___) | |_| | |___| |___ ")
+    print(r" |____/___|_|  |_|_|   |_____|_____|_| \_\  \____\___/|_| \_|____/ \___/|_____|_____|")
+    print("\n                    \"DO IT SIMPLER, DO IT BETTER\"                  ")
+    print("======================================================================================")
+    print("Type 'help' for basic syntax instructions.\n")
+
+def main():
+    print_banner()
+
+    if readline:
+        readline.parse_and_bind("tab: complete")
+        readline.set_completer(autocomplete_handler)
+
+    while True:
+        try:
+            user_input = input("simpler //> ")
+            parse_and_execute(user_input)
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting.")
+            break
+
+if __name__ == "__main__":
+    main()
