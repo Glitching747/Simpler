@@ -387,7 +387,7 @@ class SimplerBrowserApp(tk.Tk):
         ).pack(side="left")
         ttk.Label(
             header,
-            text="  — one launcher, every browser",
+            text="  — do it simpler, do it better",
             font=("Segoe UI", 10),
         ).pack(side="left")
  
