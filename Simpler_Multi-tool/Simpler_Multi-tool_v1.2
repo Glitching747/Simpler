@@ -1,0 +1,674 @@
+import ctypes
+import urllib.request
+import json
+import sys
+import time
+import os
+import random
+import pkg_resources
+import re
+import socket
+import secrets
+import string
+import requests
+import hashlib
+import builtins
+from datetime import datetime
+from PIL import Image
+from PIL.ExifTags import TAGS
+from colorama import Fore, init
+
+# Initialize colorama (essential for Windows color support)
+init()
+
+# 2. Force Windows to enable color processing inside the window
+kernel32 = ctypes.windll.kernel32
+kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7) 
+
+# 3. Intercept all text to make it green
+class GreenStream:
+    def __init__(self, original_stream):
+        self.stream = original_stream
+
+    def write(self, data):
+        if data.strip():  
+            self.stream.write(f"\033[32m{data}\033[0m")
+        else:
+            self.stream.write(data)
+
+    def flush(self):
+        self.stream.flush()
+
+sys.stdout = GreenStream(sys.stdout)
+sys.stderr = GreenStream(sys.stderr)
+
+# Set the global text color to green once
+print(Fore.GREEN, end="")
+
+# ==========================================
+# CONFIGURATION SECTION
+# ==========================================
+ASCII_PLACEHOLDER = r'''
+  _________.__               .__                    _____        .__   __  .__        ___________           .__   
+ /   _____/|__| _____ ______ |  |   ___________    /     \  __ __|  |_/  |_|__|       \__    ___/___   ____ |  |  
+ \_____  \ |  |/     \\____ \|  | _/ __ \_  __ \  /  \ /  \|  |  \  |\   __\  |  ______ |    | /  _ \ /  _ \|  |  
+ /        \|  |  Y Y  \  |_> >  |_\  ___/|  | \/ /    Y    \  |  /  |_|  | |  | /_____/ |    |(  <_> |  <_> )  |__
+/_______  /|__|__|_|  /   __/|____/\___  >__|    \____|__  /____/|____/__| |__|         |____| \____/ \____/|____/
+        \/          \/|__|             \/                \/                                                                                                             
+                                 [ do it simpler, do it better ]
+'''
+
+# ==========================================
+# SYSTEM UTILITIES (Window Title)
+# ==========================================
+def set_window_title():
+    """Sets the console window title to 'Simpler Multi-tool'."""
+    if sys.platform.startswith('win'):
+        try:
+            ctypes.windll.kernel32.SetConsoleTitleW("Simpler Multi-tool")
+            return True
+        except Exception as e:
+            print(f"\033[92mNote: Could not set window title. Error: {e}")
+            return False
+    return True
+
+# ==========================================
+# VISUALIZATION (Clean & Minimal Layout)
+# ==========================================
+def display_art_and_pole():
+    """Displays a clean ASCII header without broken boxes."""
+    # Clear screen for clean look
+    os.system('cls' if sys.platform.startswith('win') else 'clear')
+
+    print(ASCII_PLACEHOLDER)
+    
+    # A single, clean, consistent divider line under the art
+    print("=" * 115)
+
+# ==========================================
+# USERNAME CHECKER LOGIC
+# ==========================================
+def username_checker():
+    """Simulates checking a username across multiple social media platforms."""
+    username = input("\033[92mEnter the Username to Check: \033[0m").strip()
+    
+    if not username:
+        print("\033[91m[ERROR] Username cannot be empty.")
+        return
+
+    print(f"\n\033[92mSearching for '@{username}' across social platforms...\033[0m\n")
+
+    # List of platforms we will check
+    platforms = [
+        {"name": "Instagram", "url_template": "https://instagram.com/{}", "time": 0.8},
+        {"name": "YouTube", "url_template": "https://youtube.com/@{}", "time": 0.8},
+        {"name": "Reddit", "url_template": "https://reddit.com/{}", "time": 1.2},
+        {"name": "Twitch", "url_template": "https://twitch.tv/{}", "time": 1.2},
+        {"name": "Twitter (X)", "url_template": "https://x.com/{}", "time": 1.2},
+        {"name": "GitHub", "url_template": "https://github.com/{}", "time": 0.6},
+        {"name": "LinkedIn", "url_template": "https://linkedin.com/in/{}", "time": 1.5},
+        {"name": "TikTok", "url_template": "https://tiktok.com/@{}", "time": 0.9}
+    ]
+
+    results = []
+
+    # Simulate Network Request Processing
+    for platform in platforms:
+        print(f"\033[92mChecking {platform['name']}...\033[0m")
+        time.sleep(platform['time'])
+        
+        # Generate the actual target URL
+        target_url = platform['url_template'].format(username)
+        
+        try:
+            # Send a real web request to check the page
+            response = requests.get(target_url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+            
+            # If the page loads successfully (Status 200), the user exists
+            if response.status_code == 200:
+                status = "[EXISTS]"
+                color_code = "\033[92m"  # Green
+            # If the page gives a 404 error, the username is available
+            elif response.status_code == 404:
+                status = "[AVAILABLE]"
+                color_code = "\033[91m"  # Red
+            else:
+                status = f"[UNKNOWN ({response.status_code})]"
+                color_code = "\033[93m"  # Yellow
+                
+        except requests.exceptions.RequestException as e:
+            print(f"\033[93m[DEBUG] System Error: {e}\033[0m") # Add this line to see the actual error
+            status = "[ERROR]"
+            color_code = "\033[91m"  # Red
+
+
+        # Crucial: Use 'platform' here because it belongs to the loop above
+        results.append({
+            "platform": platform['name'],
+            "status": status,
+            "url": target_url,
+            "color": color_code
+        })
+
+    # Generate Report
+    print("\n\033[92m" + "="*60)
+    print(f"\033[92mREPORT FOR USER: @{username}")
+    print("="*60)
+
+    # Crucial: Use 'r' here because it belongs to the display loop below
+    for r in results:
+        print(f"{r['color']}{r['platform']}: {r['status']}\033[0m")
+        print(f"\033[92m  URL: {r['url']}")
+
+    # Summary Calculations
+    taken_count = sum(1 for r in results if r['status'] == "[EXISTS]")
+    available_count = len(results) - taken_count
+
+    print("\n" + "="*60)
+    print("\033[92mSUMMARY:\033[0m")
+    print(f"\033[92m  Profiles Found : {taken_count}")
+    print(f"\033[92m  Names Available: {available_count}")
+    print("="*60)
+
+    # Pauses the application window so results remain visible
+    input("\n\033[92mScan Complete. Press Enter to return to the main menu...\033[0m")
+    print("\033[92m", end="")
+
+# ==========================================
+# IP CHECKER LOGIC
+# ==========================================
+def ip_checker():
+    try:
+        # 1. User Input
+        target_ip = input("Enter the IP Address to check:").strip()
+        
+        if not target_ip:
+            print("\033[92m[Error] No IP address provided.")
+            return
+
+        # 2. API Call Setup
+        # Using ip-api.com which supports free access without an API key for standard usage.
+        api_url = f"http://ip-api.com/json/{target_ip}"
+        
+        print("\n[Processing] Connecting to global database...")
+        time.sleep(1)
+        
+        with urllib.request.urlopen(api_url, timeout=10) as response:
+            data = json.loads(response.read().decode())
+
+        # 3. Validation Check from API
+        if not data.get('status') == 'success':
+            print("\n[Error] Unable to locate IP address or invalid format.")
+            return
+            
+    except urllib.error.URLError as e:
+        print(f"\n[Network Error] {e.reason}")
+        print("Please check your internet connection and try again.")
+        return
+    except Exception as e:
+        print(f"\n[System Error] {str(e)}")
+        return
+
+    # 4. Display Information
+    print("\n" + "="*50)
+    print(f"       IP REPORT FOR: {target_ip}")
+    print("="*50)
+    
+    info = [
+        ("Country", data.get('country', 'N/A')),
+        ("Region Name", data.get('regionName', 'N/A')),
+        ("City", data.get('city', 'N/A')),
+        ("Latitude/Longitude", f"{data.get('lat')} / {data.get('lon')}"),
+        ("ISP", data.get('isp', 'N/A')),
+        ("Organization", data.get('org', 'N/A')),
+        ("Timezone", data.get('timezone', 'N/A')),
+        ("Locale", data.get('as', 'N/A')),
+        ("Postal Code", data.get('zip', 'N/A')),
+    ]
+
+    for label, value in info:
+        print(f"  {label:<20} : {value}")
+        
+    input("\033[92mScan Complete. Press Enter to return to the main menu...\033[0m")
+    # RE-LOCK TEXT COLOR TO GREEN BEFORE MOVING BACK TO THE MENU SHOWTIME
+    print("\033[92m", end="")
+
+# ==========================================
+# EMAIL CHECKER LOGIC
+# ==========================================
+def email_checker():
+    """
+    Validates an email address and provides structural information 
+    regarding its format and domain composition.
+    """
+    
+    print("\n" + "="*50)
+    print("\033[92m          EMAIL VALIDATION & ANALYSIS")
+    print("="*50 + "\n")
+
+    # Prompt as requested
+    user_email = input("\033[92mEnter the Email Address to check: \033[0m").strip()
+
+    if not user_email:
+        print("\033[92m[Error] Input cannot be empty.")
+        return
+
+    # Regex pattern for email validation
+    email_pattern = re.compile(
+        r"^[a-zA-Z0-9_.+-]+"      # Local part
+        "@"                       # @ symbol
+        "[a-zA-Z0-9-]+"           # Domain name
+        "\."                      # Dot separator
+        "[a-zA-Z]{2,}$"           # Top-level domain (TLD)
+    )
+
+    print(f"\n\033[92m[Processing] Analyzing {user_email}...")
+    time.sleep(1)
+
+    match = re.match(email_pattern, user_email)
+
+    # Separate local and domain parts
+    if "@" in user_email:
+        username_part, domain_part = user_email.split("@", 1)
+    else:
+        username_part = ""
+        domain_part = ""
+
+    print("\n" + "-"*50)
+    print("\033[92mANALYSIS REPORT")
+    print("-"*50)
+
+    # 1. Format Validation
+    if match:
+        status_msg = "\033[92mVALID\033[0m" # Green color code
+        status_desc = "Format adheres to standard RFC syntax."
+    else:
+        status_msg = "\033[91mINVALID\033[0m" # Red color code
+        status_desc = "Syntax errors detected (e.g., missing @ or invalid characters)."
+
+    print(f"\nValidation Status : {status_msg}")
+    print(f"\033[92mDescription       : {status_desc}")
+
+    # 2. Component Details
+    if match:
+        print(f"\033[92m\nLocal Part      : @{username_part}")
+        print(f"\033[92mDomain          : .{domain_part}")
+        
+        # Analyze TLD and Provider hints
+        tld = domain_part.split('.')[-1] if "." in domain_part else "N/A"
+        print(f"TLD             : {tld.upper()}")
+
+        # Simulate DNS/MX Check Info (Informational)
+        print("\n[Network Information]")
+        try:
+            host_info = socket.gethostbyname(domain_part)
+            print(f"\033[92mDNS Resolved  : True ({host_info})")
+            mx_record_status = "[Configured]"
+        except socket.gaierror:
+            print("\033[92mDNS Resolved  : False (Domain unreachable)")
+            mx_record_status = "[Check DNS Configuration]"
+        
+        print(f"\033[92mMX Record Status: {mx_record_status}")
+
+    print("-"*50)
+    print("[Analysis Complete]")
+        # CRITICAL FIX: Pauses the application window so results remain visible
+    input("\033[92mScan Complete. Press Enter to return to the main menu...\033[0m")
+    # RE-LOCK TEXT COLOR TO GREEN BEFORE MOVING BACK TO THE MENU SHOWTIME
+    print("\033[92m", end="")
+    
+# ==========================================
+# IMAGE METADATA DELETER LOGIC
+# ==========================================
+def image_metadata_deleter():
+    # Get the file path from the user
+    user_input = input("\033[92mInput the image file path to extract metadata:")
+    
+    # Clean up Windows quotes if the path was copied directly
+    file_path = user_input.strip('"')
+    
+    try:
+        # 1. Open and read the data first
+        with Image.open(file_path) as img:
+            img_format = img.format
+            
+            print("\n--- Current Metadata ---")
+            print(f"\033[92mFormat: {img_format}")
+            print(f"\033[92mSize: {img.size}")
+            
+            exif_data = img.getexif()
+            if exif_data:
+                for tag_id, value in exif_data.items():
+                    tag_name = TAGS.get(tag_id, tag_id)
+                    print(f"\033[92m{tag_name}: {value}")
+            else:
+                print("\033[92mNo EXIF metadata found.")
+
+            # Load image data into memory so we can safely overwrite the file
+            img.load()
+
+        # 2. Overwrite the file with a clean copy (removes metadata)
+        print("\n\033[92mDeleting metadata from the source file...")
+        
+        # Saving without passing the 'exif' parameter strips it completely
+        img_clean = Image.frombytes(img.mode, img.size, img.tobytes())
+        img_clean.save(file_path, format=img_format)
+        
+        print("\033[92mMetadata successfully deleted!")
+                
+    except FileNotFoundError:
+        print("\033[92mError: The specified file could not be found.")
+    except Exception as e:
+        print(f"\033[92mError handling image: {e}")
+        
+    # Wait for user input before continuing back to your menu
+    print("\n\033[92m")
+    input("\033[92mPress Enter to return to the main menu...")
+    print("\033[92m", end="")
+    
+# ==========================================
+# TEMP MAIL GENERATOR LOGIC
+# ==========================================
+def temp_mail_generator():
+    # We use a Session object so Python automatically remembers our inbox cookie/token
+    session = requests.Session()
+
+    # 1. Provide an extensive set of browser headers to perfectly match a real Chrome user
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "en-US,en;q=0.9",
+        "X-Requested-With": "XMLHttpRequest"
+    })
+
+    print("\n[*] Connecting to Guerrilla Mail infrastructure...")
+
+    # 2. Hit the main index endpoint FIRST to accept cookies/session tokens like a browser does
+    try:
+        session.get("https://guerrillamail.com", timeout=10)
+
+        # ###############################################################
+        # FIX: Changed URL to point to the actual ajax JSON endpoint
+        # ###############################################################
+        init_url = "https://guerrillamail.com/ajax.php?f=get_email_address"
+        response = session.get(init_url, timeout=10)
+        
+        # Safe check to see if we got HTML (blocked/Cloudflare) instead of JSON
+        if "application/json" not in response.headers.get("Content-Type", ""):
+            print("[-] Guerrilla Mail is blocking the automated request via Cloudflare.")
+            print("[-] Please generate one manually in your browser instead.")
+            input("Press Enter to return to main menu...")
+            return
+
+        init_data = response.json()
+        email_address = init_data.get("email_addr")
+        seq = 0
+
+        print(f"\033[92m[+] Generated Guerrilla Mail: {email_address}\033[0m")
+        print("\033[92m[*] Listening for incoming emails... (Press Ctrl+C to stop listening)\n")
+
+    except Exception as e:
+        print(f"[-] Failed to establish a session with Guerrilla Mail: {e}")
+        print("\n" + "=" * 50)
+        input("Press Enter to return to main menu...")
+        return
+
+    # 4. Poll the inbox continuously
+    try:
+        while True:
+            # FIX: Updated URLs to hit the real ajax.php endpoint for fetching messages
+            check_url = f"https://guerrillamail.com/ajax.php?f=check_email&seq={seq}"
+            response = session.get(check_url)
+            
+            if "application/json" not in response.headers.get("Content-Type", ""):
+                time.sleep(5)
+                continue
+                
+            init_data = response.json()
+            list_emails = init_data.get("list", [])
+
+            if list_emails:
+                for email in list_emails:
+                    print("-" * 50)
+                    print(f"\033[92mFrom: {email.get('mail_from')}\033[0m")
+                    print(f"\033[92mSubject: {email.get('mail_subject')}\033[0m")
+
+                    # FIX: Updated endpoint to fetch message body correctly
+                    mail_id = email.get("mail_id")
+                    fetch_url = f"https://guerrillamail.com/ajax.php?f=fetch_email&email_id={mail_id}"
+                    body_response = session.get(fetch_url)
+                    
+                    if "application/json" in body_response.headers.get("Content-Type", ""):
+                        email_body_data = body_response.json()
+                        print(f"\033[92mMessage: {email_body_data.get('mail_body')}\033[0m")
+                    print("-" * 50)
+
+            # Update the sequence token to avoid re-reading old messages
+            if init_data.get("sid"):
+                # Real API keeps track using the 'sid' and returning seq increments
+                seq = init_data.get("seq", seq)
+
+            time.sleep(5) # Refresh every 5 seconds
+
+    except KeyboardInterrupt:
+        print("\n\n\033[92m[-] Stopped listening for emails.\033[0m")
+
+    # 5. Halt until the user hits enter
+    print("\n" + "=" * 50)
+    input("\033[92mPress Enter to return to main menu...\033[0m")
+    print("\033[92m", end="")
+    
+# ==========================================
+# FILE HASHER LOGIC
+# ==========================================
+def file_hasher():    
+    print("\033[92m\n" + "=" * 50)
+    print("[+] File Integrity Hasher")
+    print("=" * 50 + "\033[0m")
+
+    
+    # 1. Ask the user for the target file path
+    # Example: C:\Users\Username\Downloads\test.exe
+    file_path = input("\n\033[92mEnter the full path to the file:").strip().strip('"')
+
+    # 2. Check if the file actually exists before wasting resources
+    if not os.path.exists(file_path):
+        print("\033[91m[-] Error: The specified file path does not exist.\033[0m")
+        print("\n" + "=" * 50)
+        input("\033[92mPress Enter to return to main menu...\033[0m")
+        return
+
+    # Check if it's a directory instead of a file
+    if os.path.isdir(file_path):
+        print("\033[91m[-] Error: That is a folder, not a single file.\033[0m")
+        print("\n" + "=" * 50)
+        input("\033[92mPress Enter to return to main menu...\033[0m")
+        return
+
+    print("\n[*] Processing binary data stream... Please wait...")
+
+    # 3. Initialize the cryptographic engines
+    md5_hasher = hashlib.md5()
+    sha256_hasher = hashlib.sha256()
+
+    try:
+        # Open the file in Read-Binary ('rb') mode
+        with open(file_path, 'rb') as file:
+            while True:
+                # Read file in optimized 64KB chunks to keep RAM clear
+                chunk = file.read(65536)
+                if not chunk:
+                    break
+                # Feed the data block into both algorithms simultaneously
+                md5_hasher.update(chunk)
+                sha256_hasher.update(chunk)
+
+        # 4. Extract and print the final hexadecimal signatures
+        print("\n" + "-" * 50)
+        print(f"\033[92mMD5 Hash    : {md5_hasher.hexdigest()}\033[0m")
+        print(f"\033[92mSHA-256 Hash: {sha256_hasher.hexdigest()}\033[0m")
+        print("\033[92m-" * 50)
+
+    except Exception as e:
+        print(f"\033[91m[-] Read Error occurred: {e}\033[0m")
+
+    # 5. Return sequence
+    print("\n" + "=" * 50)
+    input("\033[92mPress Enter to return to main menu...\033[0m")
+    print("\033[92m", end="")
+
+# ==========================================
+# PASSWORD GENERATOR LOGIC
+# ==========================================
+def password_generator():
+    # Define the character pool: Letters (upper & lower), digits, and symbols
+    character_pool = string.ascii_letters + string.digits + string.punctuation
+
+    print("--- Secure Password Generator ---")
+    print("Select a password strength option:")
+    print("1: 8 ch random password (Medium Entropy Status)")
+    print("2: 12 ch random password (Strong Entropy Status)")
+    print("3: 19 ch random password (Excellent Entropy Status)")
+    print("4: 32 ch random password (OVERKILL Entropy Status)")
+
+    # Mapping user choice to the requested character lengths
+    length_mapping = {"1": 8, "2": 12, "3": 19, "4": 32}
+
+    user_choice = input("\nEnter your choice (1-4): ").strip()
+
+    if user_choice in length_mapping:
+        target_length = length_mapping[user_choice]
+
+        # Securely generate the password character by character from the pool
+        password = "".join(
+            secrets.choice(character_pool) for _ in range(target_length)
+        )
+
+        print(f"\nGenerated Password: {password}")
+    else:
+        print("\nInvalid selection. Please choose 1-4.")
+
+    # Pause execution until the user presses Enter to return to your main menu logic
+    input("\nPress Enter to return to main menu...")
+
+# ==========================================
+# PORT SCANNER LOGIC
+# ==========================================
+def port_scanner():
+    # 1. Gather User Input
+    target = input("Enter target host (IP or Domain): ").strip()
+    if not target:
+        print("[-] Invalid target.")
+        input("\nPress Enter to return to main menu...")
+        return
+
+    try:
+        target_ip = socket.gethostbyname(target)
+    except socket.gaierror:
+        print("\n[-] Hostname could not be resolved.")
+        input("\nPress Enter to return to main menu...")
+        return
+
+    print(f"\n[*] Scanning Target: {target} ({target_ip})")
+    print(f"[*] Scan Started at: {str(datetime.now())}")
+    print("[*] Checking common ports (this may take a moment)...\n")
+    print(f"{'PORT':<10}{'STATE':<10}{'SERVICE':<15}{'COMMON USAGE & INFO'}")
+    print("-" * 75)
+
+    # 2. Define standard target ports and descriptions
+    common_ports = {
+        21: ("FTP", "File Transfer Protocol - Used for transferring files. Often insecure."),
+        22: ("SSH", "Secure Shell - Secure remote command-line access and file transfers."),
+        23: ("Telnet", "Telnet - Unencrypted remote text communication. Highly vulnerable."),
+        25: ("SMTP", "Simple Mail Transfer Protocol - Used for routing/sending emails."),
+        53: ("DNS", "Domain Name System - Translates domain names into IP addresses."),
+        80: ("HTTP", "Hypertext Transfer Protocol - Standard unencrypted web traffic."),
+        110: ("POP3", "Post Office Protocol v3 - Used by email clients to retrieve emails."),
+        139: ("NetBIOS", "NetBIOS - File and printer sharing over a local network connection."),
+        143: ("IMAP", "Internet Message Access Protocol - Modern protocol for email retrieval."),
+        443: ("HTTPS", "HTTP Secure - Encrypted web traffic using SSL/TLS certificates."),
+        445: ("SMB", "Server Message Block - Windows file sharing. Targets of EternalBlue exploits."),
+        1433: ("MSSQL", "Microsoft SQL Server - Database management network traffic."),
+        3306: ("MySQL", "MySQL Database - Very common database connector endpoint."),
+        3389: ("RDP", "Remote Desktop Protocol - Windows remote graphical desktop access."),
+        8080: ("HTTP-Alt", "HTTP Alternate - Commonly used for web proxies or dev web servers.")
+    }
+
+    open_ports_count = 0
+
+    # 3. Execution of the network scan loop
+    try:
+        for port, info in common_ports.items():
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.8)
+            
+            result = s.connect_ex((target_ip, port))
+            
+            if result == 0:
+                print(f"{port:<10}{'OPEN':<10}{info[0]:<15}{info[1]}")
+                open_ports_count += 1
+                
+            s.close()
+
+        if open_ports_count == 0:
+            print("\n[-] Scan complete. No common open ports were detected on this target.")
+        else:
+            print(f"\n[+] Scan complete. Found {open_ports_count} open port(s).")
+
+    except KeyboardInterrupt:
+        print("\n[-] Scan cancelled by user.")
+    except socket.error:
+        print("\n[-] Could not connect to server framework host.")
+
+    # 4. Enforced Return to Main Menu Control Block
+    input("\nPress Enter to return to main menu...")    
+# ==========================================
+# MAIN MENU & LOADER
+# ==========================================
+def show_menu():
+    """Displays the command menu right under the header."""
+    display_art_and_pole()
+    
+    print("\n\033[1m  COMMAND OPTIONS:\033[0m")
+    print("\033[92m    [0] Exit Program     [2] IP Checker    [4] Image Metadata Deleter [6] File Hasher        [8] Port Scanner")
+    print("\033[92m    [1] Username Checker [3] Email Checker [5] Temp Mail Generator    [7] Password Generator [9] Coming Soon ")
+    print("\n" + "=" * 115)
+
+def main():
+    set_window_title()
+    
+    while True:
+        show_menu()
+        
+        try:
+            choice = input("\n\033[92mEnter Selection (0-10): ").strip()
+            
+            if choice == '0':
+                print("\n\033[92mthaaShutting down Simpler Multi-tool. Goodbye!")
+                break
+            elif choice == '1':
+                username_checker()
+            elif choice == '2':
+                ip_checker()
+            elif choice == '3':
+                email_checker()
+            elif choice == '4':
+                image_metadata_deleter()
+            elif choice == '5':
+                temp_mail_generator()
+            elif choice == '6':
+                file_hasher()
+            elif choice == '7':
+                password_generator()
+            elif choice == '8':
+                port_scanner()
+            else:
+                print("[Input Error] Please enter 0-10.\n")
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user. Exiting...")
+            break
+
+if __name__ == "__main__":
+    main()
