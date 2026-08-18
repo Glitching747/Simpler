@@ -1,4 +1,4 @@
-**Simpler_Console_v1.3**
+**[Simpler_Console_v1.3](https://github.com/Glitching747/Simpler/blob/main/Simpler_Console/Simpler_Console_v1.3)**
 <img width="1280" height="400" alt="image" src="https://github.com/user-attachments/assets/458c2057-cbae-4853-b7e4-063e59d9a848" />
 1: run apps
 2: run browser site
@@ -18,7 +18,7 @@
 16: help
 17: exit
 
-**Simpler_Browser_v1**
+**[Simpler_Browser_v1](https://github.com/Glitching747/Simpler/blob/main/Simpler_Browser/Simpler_Browser_v1)**
 <img width="1280" height="400" alt="image" src="https://github.com/user-attachments/assets/412deaca-454e-4a8b-ba03-3ec6fdb5aa2b" />
 1: launch browsers
 2: launch sites
@@ -26,7 +26,7 @@
 Supported Browsers:
 Chrome, Brave, Firefox, LibreWolf, Waterfox, Tor Browser, Zen, Ungoogled Chromium, Helium, I2P
 
-**Simpler_Multi-tool_v1**
+**[Simpler_Multi-tool_v1](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_v1)**
 <img width="1280" height="400" alt="image" src="https://github.com/user-attachments/assets/a024a91c-edb7-4548-80c2-fcaf82d0aeed" />
 1: Username Checker (Social Media)
 2: IP Checker
