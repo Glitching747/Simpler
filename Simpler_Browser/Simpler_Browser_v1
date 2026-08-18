@@ -1,0 +1,464 @@
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from tkinter import ttk, messagebox
+ 
+# ---------------------------------------------------------------------------
+# Browser definitions
+# ---------------------------------------------------------------------------
+# "engine" tells us which command-line flags to use for private browsing.
+#   chromium -> --incognito
+#   firefox  -> -private-window
+#   tor      -> no incognito flag/button (Tor is already private)
+ 
+BROWSER_DEFS = {
+    "Chrome": {
+        "engine": "chromium",
+        "which": ["google-chrome", "google-chrome-stable", "chrome"],
+        "win_paths": [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ],
+        "mac_paths": ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+    },
+    "Brave": {
+        "engine": "chromium",
+        "which": ["brave-browser", "brave"],
+        "win_paths": [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+        ],
+        "mac_paths": ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"],
+    },
+    "Firefox": {
+        "engine": "firefox",
+        "which": ["firefox"],
+        "win_paths": [r"C:\Program Files\Mozilla Firefox\firefox.exe"],
+        "mac_paths": ["/Applications/Firefox.app/Contents/MacOS/firefox"],
+    },
+    "LibreWolf": {
+        "engine": "firefox",
+        "which": ["librewolf"],
+        "win_paths": [r"C:\Program Files\LibreWolf\librewolf.exe"],
+        "mac_paths": ["/Applications/LibreWolf.app/Contents/MacOS/librewolf"],
+    },
+    "Waterfox": {
+        "engine": "firefox",
+        "which": ["waterfox"],
+        "win_paths": [r"C:\Program Files\Waterfox\waterfox.exe"],
+        "mac_paths": ["/Applications/Waterfox.app/Contents/MacOS/waterfox"],
+    },
+    "Tor Browser": {
+        "engine": "tor",
+        "which": ["tor-browser", "torbrowser-launcher"],
+        "win_paths": [
+            r"C:\Program Files\Tor Browser\Browser\firefox.exe",
+            os.path.join(
+                os.path.expanduser("~"), "OneDrive", "Desktop",
+                "Tor Browser", "Browser", "firefox.exe",
+            ),
+        ],
+        "mac_paths": ["/Applications/Tor Browser.app/Contents/MacOS/firefox"],
+    },
+    "Zen": {
+        "engine": "firefox",
+        "which": ["zen", "zen-browser"],
+        "win_paths": [r"C:\Program Files\Zen Browser\zen.exe"],
+        "mac_paths": ["/Applications/Zen.app/Contents/MacOS/zen"],
+    },
+    "Ungoogled Chromium": {
+        "engine": "chromium",
+        "which": ["ungoogled-chromium", "chromium"],
+        "win_paths": [r"C:\Program Files\Ungoogled Chromium\chrome.exe"],
+        "mac_paths": ["/Applications/Chromium.app/Contents/MacOS/Chromium"],
+    },
+    "Helium": {
+        "engine": "chromium",
+        "which": ["helium", "helium-browser"],
+        "win_paths": [r"C:\Program Files\Helium\helium.exe"],
+        "mac_paths": ["/Applications/Helium.app/Contents/MacOS/Helium"],
+    },
+    "I2P": {
+        "engine": "i2p",
+        "which": ["i2prouter", "i2p"],
+        "win_paths": [
+            r"C:\Program Files\i2p\i2p.exe",
+            r"C:\Program Files\i2p\i2prouter.exe",
+            r"C:\Program Files (x86)\i2p\i2prouter.exe",
+        ],
+        "mac_paths": ["/Applications/i2prouter.app/Contents/MacOS/i2prouter"],
+    },
+}
+ 
+BROWSER_NAMES = list(BROWSER_DEFS.keys())
+ 
+# Best-effort winget package IDs used for auto-install when a browser isn't
+# found. Some of these (Zen, Helium, I2P especially) vary by publisher/version
+# on winget — if one fails to resolve, run `winget search <name>` yourself
+# to find the right --id and update this dict.
+WINGET_IDS = {
+    "Chrome": "Google.Chrome",
+    "Brave": "Brave.Brave",
+    "Firefox": "Mozilla.Firefox",
+    "LibreWolf": "LibreWolf.LibreWolf",
+    "Waterfox": "Waterfox.Waterfox",
+    "Tor Browser": "TorProject.TorBrowser",
+    "Zen": "Zen-Team.Zen-Browser",
+    "Ungoogled Chromium": "eloston.ungoogled-chromium",
+    "Helium": "net.imput.Helium",
+    "I2P": "i2pd.i2pd",
+}
+ 
+ 
+def winget_available():
+    return platform.system() == "Windows" and shutil.which("winget") is not None
+ 
+ 
+def install_via_winget(name: str):
+    """Blocking call — run this on a background thread, not the GUI thread.
+    Returns (success: bool, message: str)."""
+    pkg_id = WINGET_IDS.get(name)
+    if not pkg_id:
+        return False, f"No winget package ID known for {name}."
+    try:
+        result = subprocess.run(
+            [
+                "winget", "install", "--id", pkg_id, "-e",
+                "--accept-package-agreements", "--accept-source-agreements",
+                "--silent",
+            ],
+            capture_output=True, text=True, timeout=900,
+        )
+        if result.returncode == 0:
+            return True, f"{name} installed successfully."
+        return False, (result.stderr or result.stdout or "winget install failed").strip()[-500:]
+    except FileNotFoundError:
+        return False, "winget isn't available on this system."
+    except subprocess.TimeoutExpired:
+        return False, f"Installing {name} via winget timed out."
+    except Exception as exc:
+        return False, str(exc)
+ 
+ 
+def find_browser_path(name: str):
+    """Try to locate an installed browser's executable. Returns a path/command
+    or None if it can't be found."""
+    info = BROWSER_DEFS[name]
+    system = platform.system()
+ 
+    # 1. Check PATH via shutil.which for every known command alias
+    for cmd in info["which"]:
+        found = shutil.which(cmd)
+        if found:
+            return found
+ 
+    # 2. Check common install locations per OS
+    if system == "Windows":
+        for path in info.get("win_paths", []):
+            if os.path.isfile(path):
+                return path
+    elif system == "Darwin":
+        for path in info.get("mac_paths", []):
+            if os.path.isfile(path):
+                return path
+ 
+    return None
+ 
+ 
+def build_command(name: str, url: str, incognito: bool, tor: bool = False):
+    """Build the subprocess command list for launching `name` at `url`.
+ 
+    `tor` only applies to Brave: it opens a new private window that routes
+    through the Tor network (Brave's built-in "New Private Window with Tor").
+    """
+    path = find_browser_path(name)
+    if not path:
+        return None
+ 
+    engine = BROWSER_DEFS[name]["engine"]
+    cmd = [path]
+ 
+    if tor and name == "Brave":
+        # Brave's private-window-with-Tor mode; this is private on its own,
+        # so we don't also add --incognito.
+        cmd.append("--tor")
+    elif incognito and engine == "chromium":
+        cmd.append("--incognito")
+    elif incognito and engine == "firefox":
+        cmd.append("-private-window")
+    # Tor Browser itself never gets an incognito/tor flag - it's private by default
+ 
+    if url:
+        cmd.append(url)
+ 
+    return cmd
+ 
+ 
+def launch_tab(master, name: str, url: str, incognito: bool, tor: bool = False):
+    """Launch `name` at `url`. If the browser isn't found and winget is
+    available, offers to install it, then launches once install finishes.
+    `master` is any Tk widget used to anchor dialogs (e.g. the root window)."""
+    path = find_browser_path(name)
+ 
+    if path:
+        _spawn(name, url, incognito, tor)
+        return
+ 
+    if not winget_available():
+        messagebox.showerror(
+            "Browser not found",
+            f"Couldn't find {name} installed on this system, and winget "
+            f"isn't available to auto-install it.\n"
+            f"Install {name} manually, or make sure it's on your PATH.",
+        )
+        return
+ 
+    if not messagebox.askyesno(
+        "Browser not found",
+        f"{name} isn't installed. Install it now via winget and then launch it?",
+    ):
+        return
+ 
+    progress = tk.Toplevel(master)
+    progress.title("Installing…")
+    progress.geometry("360x100")
+    progress.resizable(False, False)
+    progress.transient(master)
+    progress.grab_set()
+    ttk.Label(progress, text=f"Installing {name} via winget…", padding=12).pack()
+    bar = ttk.Progressbar(progress, mode="indeterminate", length=300)
+    bar.pack(pady=8)
+    bar.start(12)
+ 
+    result_holder = {}
+ 
+    def worker():
+        success, message = install_via_winget(name)
+        result_holder["success"] = success
+        result_holder["message"] = message
+ 
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+ 
+    def poll():
+        if thread.is_alive():
+            master.after(200, poll)
+            return
+        bar.stop()
+        progress.grab_release()
+        progress.destroy()
+ 
+        if not result_holder.get("success"):
+            messagebox.showerror(
+                "Install failed",
+                f"Couldn't install {name} via winget:\n{result_holder.get('message')}",
+            )
+            return
+ 
+        new_path = find_browser_path(name)
+        if not new_path:
+            messagebox.showerror(
+                "Installed, but not found",
+                f"{name} was installed but couldn't be located afterward. "
+                f"You may need to restart Simpler Browser.",
+            )
+            return
+ 
+        _spawn(name, url, incognito, tor)
+ 
+    master.after(200, poll)
+ 
+ 
+def _spawn(name: str, url: str, incognito: bool, tor: bool):
+    cmd = build_command(name, url, incognito, tor)
+    if cmd is None:
+        messagebox.showerror(
+            "Browser not found",
+            f"Couldn't find {name} installed on this system.\n"
+            f"Make sure it's installed and on your PATH.",
+        )
+        return False
+    try:
+        subprocess.Popen(cmd)
+        return True
+    except Exception as exc:
+        messagebox.showerror("Launch failed", f"Couldn't launch {name}:\n{exc}")
+        return False
+ 
+ 
+# ---------------------------------------------------------------------------
+# GUI
+# ---------------------------------------------------------------------------
+ 
+class TabRow(ttk.Frame):
+    """One row = one configured tab: browser choice, URL, incognito toggle."""
+ 
+    def __init__(self, parent, remove_callback, index, browser="Firefox", url=""):
+        super().__init__(parent, padding=6)
+        self.remove_callback = remove_callback
+ 
+        ttk.Label(self, text=f"Tab {index}", width=7).grid(row=0, column=0, padx=4)
+ 
+        self.browser_var = tk.StringVar(value=browser)
+        browser_menu = ttk.Combobox(
+            self, textvariable=self.browser_var, values=BROWSER_NAMES,
+            state="readonly", width=18,
+        )
+        browser_menu.grid(row=0, column=1, padx=4)
+        browser_menu.bind("<<ComboboxSelected>>", self._on_browser_change)
+ 
+        self.url_var = tk.StringVar(value=url)
+        url_entry = ttk.Entry(self, textvariable=self.url_var, width=38)
+        url_entry.grid(row=0, column=2, padx=4)
+ 
+        self.incognito_var = tk.BooleanVar(value=False)
+        self.incognito_check = ttk.Checkbutton(
+            self, text="Incognito", variable=self.incognito_var,
+        )
+        self.incognito_check.grid(row=0, column=3, padx=4)
+ 
+        self.tor_var = tk.BooleanVar(value=False)
+        self.tor_check = ttk.Checkbutton(
+            self, text="Tor (Brave)", variable=self.tor_var,
+            command=self._on_tor_toggle,
+        )
+        self.tor_check.grid(row=0, column=4, padx=4)
+ 
+        ttk.Button(self, text="Launch", command=self.launch).grid(row=0, column=5, padx=4)
+        ttk.Button(self, text="✕", width=3, command=self._remove).grid(row=0, column=6, padx=4)
+ 
+        self._on_browser_change()
+ 
+    def _on_browser_change(self, event=None):
+        # Tor Browser and I2P are always private/have no incognito mode --
+        # disable and clear the incognito toggle for them
+        if self.browser_var.get() in ("Tor Browser", "I2P"):
+            self.incognito_var.set(False)
+            self.incognito_check.state(["disabled"])
+        else:
+            self.incognito_check.state(["!disabled"])
+ 
+        # The "Tor (Brave)" box only makes sense when Brave is selected
+        if self.browser_var.get() == "Brave":
+            self.tor_check.state(["!disabled"])
+        else:
+            self.tor_var.set(False)
+            self.tor_check.state(["disabled"])
+        self._on_tor_toggle()
+ 
+    def _on_tor_toggle(self):
+        # Tor-in-Brave is already a private window, so incognito is redundant
+        # and gets disabled while it's checked.
+        if self.tor_var.get():
+            self.incognito_var.set(False)
+            self.incognito_check.state(["disabled"])
+        elif self.browser_var.get() not in ("Tor Browser", "I2P"):
+            self.incognito_check.state(["!disabled"])
+ 
+    def _remove(self):
+        self.remove_callback(self)
+ 
+    def launch(self):
+        name = self.browser_var.get()
+        url = self.url_var.get().strip()
+        incognito = self.incognito_var.get()
+        tor = self.tor_var.get()
+        launch_tab(self.winfo_toplevel(), name, url, incognito, tor)
+ 
+    def get_config(self):
+        return self.browser_var.get(), self.url_var.get().strip(), self.incognito_var.get(), self.tor_var.get()
+ 
+ 
+class SimplerBrowserApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Simpler Browser")
+        self.geometry("780x420")
+        self.minsize(700, 320)
+ 
+        header = ttk.Frame(self, padding=10)
+        header.pack(fill="x")
+        ttk.Label(
+            header, text="Simpler Browser", font=("Segoe UI", 16, "bold")
+        ).pack(side="left")
+        ttk.Label(
+            header,
+            text="  — one launcher, every browser",
+            font=("Segoe UI", 10),
+        ).pack(side="left")
+ 
+        # Scrollable area for tab rows
+        container = ttk.Frame(self)
+        container.pack(fill="both", expand=True, padx=10, pady=6)
+ 
+        canvas = tk.Canvas(container, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        self.rows_frame = ttk.Frame(canvas)
+ 
+        self.rows_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=self.rows_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+ 
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+ 
+        self.rows = []
+ 
+        # Bottom control bar
+        controls = ttk.Frame(self, padding=10)
+        controls.pack(fill="x")
+ 
+        ttk.Button(controls, text="+ Add Tab", command=self.add_row).pack(side="left")
+        ttk.Button(
+            controls, text="Reset to Default (Brave: New Tab)",
+            command=self.load_default,
+        ).pack(side="left", padx=8)
+        ttk.Button(
+            controls, text="Launch All", command=self.launch_all,
+        ).pack(side="right")
+ 
+        # Start with the default pre-loaded so it's useful immediately
+        self.load_default()
+ 
+    def add_row(self, browser="Firefox", url=""):
+        index = len(self.rows) + 1
+        row = TabRow(self.rows_frame, self.remove_row, index, browser=browser, url=url)
+        row.pack(fill="x", pady=2)
+        self.rows.append(row)
+ 
+    def remove_row(self, row):
+        row.destroy()
+        self.rows.remove(row)
+        self._renumber()
+ 
+    def _renumber(self):
+        for i, row in enumerate(self.rows, start=1):
+            row.grid_slaves(row=0, column=0)[0].config(text=f"Tab {i}")
+ 
+    def clear_rows(self):
+        for row in list(self.rows):
+            row.destroy()
+        self.rows.clear()
+ 
+    def load_default(self):
+        self.clear_rows()
+        self.add_row("Brave", "")
+ 
+    def launch_all(self):
+        if not self.rows:
+            messagebox.showinfo("Nothing to launch", "Add at least one tab first.")
+            return
+        for row in self.rows:
+            name, url, incognito, tor = row.get_config()
+            launch_tab(self, name, url, incognito, tor)
+ 
+ 
+if __name__ == "__main__":
+    app = SimplerBrowserApp()
+    app.mainloop()
