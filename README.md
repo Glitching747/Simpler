@@ -26,6 +26,20 @@
 Supported Browsers:
 Chrome, Brave, Firefox, LibreWolf, Waterfox, Tor Browser, Zen, Ungoogled Chromium, Helium, I2P
 
+[Simpler_Multi-tool_norV1.4](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_norV1.4)
+<img width="1110" height="625" alt="image" src="https://github.com/user-attachments/assets/da917951-794d-461a-a465-b1ff315ed6ec" />
+1: Username Checker (Social Media)
+2: IP Checker
+3: Email Checker
+4: Image Metadata Deleter
+5: Temp Mail Generator
+6: File Hasher
+7: Password Generator
+8: Port Scanner
+9: Email Breach Checker
+10: Digital Footprint Mapper
+11: Reverse DNS Sniper
+
 **[Simpler_Multi-tool_offV1.4](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_offV1.4)**
 <img width="1111" height="617" alt="image" src="https://github.com/user-attachments/assets/4bbea578-e980-4761-bb7d-322789631590" />
 (SIMPLER IS NOT RESPONSIBLE FOR WHAT YOU DO WITH THESE COMMANDS!)
