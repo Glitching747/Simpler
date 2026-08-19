@@ -5,7 +5,7 @@ Please also check requirements.md for the things you need to install to run Simp
 ## ⚖️ Legal Disclaimer & Liability Waiver
 
 ### 1. Educational and Research Purpose Only
-The Simpler Multi-Tool (both the standard version and the offensive version) is designed and released solely for educational purposes and security testing. The main purpose is to assist cybersecurity students and professionals to discover vulnerabilities within the systems.
+The Simpler Multi-Tool (both the standard version and the offensive version) is designed and released solely for educational purposes and security testing.
 
 ### 2. User Responsibility
 By downloading, cloning, or using the software, you explicitly agree that you will be fully responsible for all your actions.
@@ -13,7 +13,7 @@ By downloading, cloning, or using the software, you explicitly agree that you wi
 * Using the mentioned software against anyone, any network, or infrastructure without written authorization is unlawful.
 
 ### 3. Limitation of Liability & Non-Responsibility
-The creators and contributors of this project hold no responsibility whatsoever for any consequences of using the mentioned software and take no liability for any misuse, damage, data loss, lawsuits, criminal charges, or imprisonment.
+The creator of this project holds no responsibility whatsoever for any consequences of using the mentioned software and take no liability for any misuse, damage, data loss, lawsuits, criminal charges, or imprisonment.
 
 This software is provided "AS IS" without warranty of any kind, express or implied. In no event shall the authors be liable for any claim, damages, or criminal proceedings caused by, arising out of, or in connection with the software or the use of the software.
 
