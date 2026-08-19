@@ -46,7 +46,7 @@ Chrome, Brave, Firefox, LibreWolf, Waterfox, Tor Browser, Zen, Ungoogled Chromiu
 10: Digital Footprint Mapper
 11: Reverse DNS Sniper
 
-#[Simpler_Multi-tool_offV1.4](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_offV1.4)
+# [Simpler_Multi-tool_offV1.4](https://github.com/Glitching747/Simpler/blob/main/Simpler_Multi-tool/Simpler_Multi-tool_offV1.4)
 <img width="1111" height="617" alt="image" src="https://github.com/user-attachments/assets/4bbea578-e980-4761-bb7d-322789631590" />
 
 ## All Offensive Features:
