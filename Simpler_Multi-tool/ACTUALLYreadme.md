@@ -5,16 +5,16 @@ Please also check requirements.md for the things you need to install to run Simp
 ## ⚖️ Legal Disclaimer & Liability Waiver
 
 ### 1. Educational and Research Purpose Only
-The Simpler Multi-Tool (including both standard and offensive modes) is developed and distributed strictly for educational purposes, authorized security research, and approved penetration testing. It is intended to help cybersecurity students, developers, and professionals understand system vulnerabilities and defenses.
+The Simpler Multi-Tool (both the standard version and the offensive version) is designed and released solely for educational purposes and security testing. The main purpose is to assist cybersecurity students and professionals to discover vulnerabilities within the systems.
 
-### 2. End-User Responsibility
-By downloading, cloning, or utilizing this software, you explicitly agree that you are entirely responsible for your actions. 
-* You must obtain prior written permission before performing any form of security assessment, scanning, or testing on any network, system, or device that you do not personally own.
-* Using these tools to target individuals, networks, or infrastructure without explicit authorization is illegal and punishable by law.
+### 2. User Responsibility
+By downloading, cloning, or using the software, you explicitly agree that you will be fully responsible for all your actions.
+* You should receive written permission beforehand to conduct security testing or any other scans or tests on any network, system, or devices that do not belong to you.
+* Using the mentioned software against anyone, any network, or infrastructure without written authorization is unlawful.
 
 ### 3. Limitation of Liability & Non-Responsibility
-The author(s) and contributor(s) of this project assume absolute zero liability and are not responsible for any misuse, damage, data loss, legal actions, criminal charges, or incarceration resulting from the use or abuse of this software. 
+The creators and contributors of this project hold no responsibility whatsoever for any consequences of using the mentioned software and take no liability for any misuse, damage, data loss, lawsuits, criminal charges, or imprisonment.
 
-This software is provided **"AS IS"** without warranty of any kind, express or implied. Under no circumstances shall the author(s) be liable for any claims, damages, or criminal prosecution arising from, out of, or in connection with the software or the use of the software.
+This software is provided "AS IS" without warranty of any kind, express or implied. In no event shall the authors be liable for any claim, damages, or criminal proceedings caused by, arising out of, or in connection with the software or the use of the software.
 
 **If you do not agree to these terms, you must delete this software immediately.**
